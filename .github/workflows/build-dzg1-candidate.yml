@@ -22,8 +22,12 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools platforms;android-36 cmake;3.22.1'
+          packages: 'platform-tools cmake;3.22.1'
           accept-android-sdk-licenses: true
+
+      - name: Install preview Android 37 platform
+        shell: bash
+        run: sdkmanager --channel=3 "platforms;android-37"
 
       - name: Set up NDK
         uses: nttld/setup-ndk@v1
