@@ -110,6 +110,7 @@
     <string name="error_exploit_timeout">The exploit exceeded the 15-minute limit</string>
     <string name="error_payload_exit">Payload execution failed: %1$d%2$s</string>
     <string name="error_success_marker">Exploit success markers were not found</string>
+    <string name="error_exact_build_mismatch">This payload is not built for firmware %1$s (%2$s). Supported exact build: %3$s. Exact firmware checks cannot be overridden.</string>
     <string name="error_ksu_stage">KernelSU staging failed: %1$s</string>
     <string name="error_ksu_verify">KernelSU late-load or control verification failed (rc=%1$d): %2$s</string>
     <string name="error_boot_id">Unable to read the current boot_id</string>
@@ -117,7 +118,7 @@
 
     <string name="artifact_exploit">exploit</string>
     <string name="artifact_kernelsu">KernelSU</string>
-    <string name="repo_no_profile">No compatible payload supports this model and kernel version</string>
+    <string name="repo_no_profile">No compatible payload supports this exact model, kernel, and firmware build</string>
     <string name="repo_downloading">Downloading %1$s</string>
     <string name="repo_size_mismatch">%1$s size does not match the support manifest</string>
     <string name="repo_size_exceeded">%1$s exceeded the declared size</string>

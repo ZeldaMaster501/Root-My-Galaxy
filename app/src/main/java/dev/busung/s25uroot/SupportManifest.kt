@@ -13,12 +13,17 @@ data class TargetProfile(
     val displayName: String,
     val models: Set<String>,
     val kernelVersions: Set<String>,
+    val kernelReleases: Set<String> = emptySet(),
+    val buildIds: Set<String> = emptySet(),
+    val exploitAttempts: Int = 24,
+    val requiresFreshP0Session: Boolean = false,
     val exploit: RemoteArtifact,
     val kernelSu: RemoteArtifact,
 ) {
     init {
         require(models.isNotEmpty()) { "Payload must support at least one model" }
         require(kernelVersions.isNotEmpty()) { "Payload must support at least one kernel version" }
+        require(exploitAttempts in 1..24) { "Exploit attempts must be between 1 and 24" }
     }
 
     fun matchesDevice(snapshot: DeviceSnapshot): Boolean =
@@ -27,14 +32,21 @@ data class TargetProfile(
     fun matchesKernelVersion(snapshot: DeviceSnapshot): Boolean =
         snapshot.kernelVersion in kernelVersions
 
+    fun matchesExactBuild(snapshot: DeviceSnapshot): Boolean =
+        (kernelReleases.isEmpty() || snapshot.kernelRelease in kernelReleases) &&
+            (buildIds.isEmpty() || snapshot.buildId in buildIds)
+
     fun matches(snapshot: DeviceSnapshot): Boolean =
-        matchesDevice(snapshot) && matchesKernelVersion(snapshot)
+        matchesDevice(snapshot) && matchesKernelVersion(snapshot) && matchesExactBuild(snapshot)
 
     val supportedModels: String
         get() = models.joinToString()
 
     val supportedKernelVersions: String
         get() = kernelVersions.joinToString()
+
+    val supportedExactBuilds: String
+        get() = buildIds.ifEmpty { kernelReleases }.joinToString()
 }
 
 data class SupportManifest(
@@ -45,7 +57,7 @@ data class SupportManifest(
         fun parse(bytes: ByteArray): SupportManifest {
             val root = JSONObject(bytes.toString(Charsets.UTF_8))
             val schemaVersion = root.getInt("schemaVersion")
-            require(schemaVersion == 3) { "Unsupported support manifest schema" }
+            require(schemaVersion == 4) { "Unsupported support manifest schema" }
             val payloadsJson = root.getJSONArray("payloads")
             val payloads = buildList {
                 for (index in 0 until payloadsJson.length()) {
@@ -58,6 +70,10 @@ data class SupportManifest(
                             displayName = payload.getString("displayName"),
                             models = payload.getJSONArray("models").strings(),
                             kernelVersions = payload.getJSONArray("kernelVersions").strings(),
+                            kernelReleases = payload.optJSONArray("kernelReleases")?.strings().orEmpty(),
+                            buildIds = payload.optJSONArray("buildIds")?.strings().orEmpty(),
+                            exploitAttempts = payload.optInt("exploitAttempts", 24),
+                            requiresFreshP0Session = payload.optBoolean("requiresFreshP0Session", false),
                             exploit = RemoteArtifact(
                                 url = exploit.getString("url"),
                                 size = exploit.getLong("size"),

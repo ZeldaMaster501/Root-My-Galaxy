@@ -150,10 +150,19 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                     appendLog(app.getString(R.string.log_shizuku_permission))
                 }
                 setPhase(InstallPhase.Checking, app.getString(R.string.status_checking_github))
+                val snapshot = DeviceSnapshot.current()
                 val profile = if (profileId == null) {
-                    repository.resolveTarget(DeviceSnapshot.current())
+                    repository.resolveTarget(snapshot)
                 } else {
                     repository.resolveTarget(profileId)
+                }
+                require(profile.matchesExactBuild(snapshot)) {
+                    app.getString(
+                        R.string.error_exact_build_mismatch,
+                        snapshot.buildId,
+                        snapshot.kernelRelease,
+                        profile.supportedExactBuilds,
+                    )
                 }
                 appendLog(app.getString(R.string.log_profile, profile.profileId))
                 updateHistoryProfile(profile.profileId)
@@ -163,7 +172,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 appendLog(app.getString(R.string.log_download_verified))
 
                 setPhase(InstallPhase.Exploiting, app.getString(R.string.status_exploit_running))
-                executeExploit(payloads.exploit)
+                executeExploit(payloads.exploit, profile)
 
                 setPhase(InstallPhase.LoadingKernelSu, app.getString(R.string.status_ksu_loading))
                 installKernelSu(payloads)
@@ -179,7 +188,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private suspend fun executeExploit(payload: File) {
+    private suspend fun executeExploit(payload: File, profile: TargetProfile) {
         val shizuku = shizukuEnabled()
         val logFile = if (shizuku) File(SHIZUKU_LOG_PATH) else File(app.filesDir, "exploit.log")
         if (shizuku) {
@@ -197,7 +206,12 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             val stagedPayload = shizukuStage(payload, SHIZUKU_PAYLOAD_PATH, "755")
             ShizukuController.exec(
                 arrayOf("/system/bin/sh", "-c", "true"),
-                shizukuEnvironment(bootToken, stagedPayload.absolutePath, helper.absolutePath),
+                shizukuEnvironment(
+                    bootToken,
+                    stagedPayload.absolutePath,
+                    helper.absolutePath,
+                    profile,
+                ),
             )
         } else {
             val processBuilder = ProcessBuilder(
@@ -208,10 +222,12 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 logFile.absolutePath,
             ).redirectErrorStream(true)
             processBuilder.environment().apply {
-                put("EXPLOIT_ATTEMPTS", EXPLOIT_ATTEMPTS)
+                put("EXPLOIT_ATTEMPTS", profile.exploitAttempts.toString())
                 put("P0_ATTEMPT_TIMEOUT_SEC", P0_ATTEMPT_TIMEOUT_SEC)
                 put("EXPLOIT_ATTEMPT_TIMEOUT_SEC", EXPLOIT_ATTEMPT_TIMEOUT_SEC)
-                cachedP0Offset(bootToken)?.let { put(P0_OFFSET_ENV, it) }
+                if (!profile.requiresFreshP0Session) {
+                    cachedP0Offset(bootToken)?.let { put(P0_OFFSET_ENV, it) }
+                }
             }
             processBuilder.start()
         }
@@ -399,13 +415,16 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         bootToken: String?,
         payloadPath: String,
         helperPath: String,
+        profile: TargetProfile,
     ): Array<String> = buildList {
-        add("EXPLOIT_ATTEMPTS=$EXPLOIT_ATTEMPTS")
+        add("EXPLOIT_ATTEMPTS=${profile.exploitAttempts}")
         add("P0_ATTEMPT_TIMEOUT_SEC=$P0_ATTEMPT_TIMEOUT_SEC")
         add("EXPLOIT_ATTEMPT_TIMEOUT_SEC=$EXPLOIT_ATTEMPT_TIMEOUT_SEC")
         add("CVE43499_ROOT_HELPER=$helperPath")
         add("LD_PRELOAD=$payloadPath")
-        cachedP0Offset(bootToken)?.let { add("$P0_OFFSET_ENV=$it") }
+        if (!profile.requiresFreshP0Session) {
+            cachedP0Offset(bootToken)?.let { add("$P0_OFFSET_ENV=$it") }
+        }
     }.toTypedArray()
 
     private fun readProcessOutput(process: Process, shizuku: Boolean): String {
@@ -482,7 +501,6 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     private fun File.readTextIfPresent(): String = if (exists()) readText() else ""
 
     companion object {
-        private const val EXPLOIT_ATTEMPTS = "24"
         private const val P0_ATTEMPT_TIMEOUT_SEC = "45"
         private const val EXPLOIT_ATTEMPT_TIMEOUT_SEC = "120"
         private const val EXPLOIT_STALL_MILLIS = 90_000L
