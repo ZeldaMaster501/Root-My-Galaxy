@@ -399,8 +399,9 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
 
     private fun shizukuStage(source: File, target: String, mode: String): File {
         val staged = File(target)
-        if (staged.exists() && staged.length() == source.length()) return staged
         try {
+            // Firmware-specific payloads can have identical file sizes. Always replace the
+            // shell-owned copy so an earlier profile cannot be reused for a different build.
             ShizukuController.writeFile(target, mode, source.inputStream())
         } catch (error: Throwable) {
             throw IllegalStateException(
